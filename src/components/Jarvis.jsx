@@ -669,7 +669,6 @@ export default function JARVIS() {
 
   const speak = (text) => {
     if (!("speechSynthesis" in window)) return;
-
     window.speechSynthesis.cancel();
 
     const voices = window.speechSynthesis.getVoices();
