@@ -75,7 +75,6 @@ export default function JARVIS() {
     return () => clearInterval(timer);
   }, []);
 
-  // Speech recognition is recreated whenever the selected language changes.
   useEffect(() => {
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -102,7 +101,6 @@ export default function JARVIS() {
     };
 
     recognition.onend = () => {
-      // Do not restart automatically; user can press the microphone again.
       setListening(false);
     };
 
@@ -112,8 +110,6 @@ export default function JARVIS() {
       try { recognition.stop(); } catch { }
       recognitionRef.current = null;
     };
-    // Recognition must be rebuilt when the chosen recognition language changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lang]);
 
   useEffect(() => {
@@ -132,34 +128,57 @@ export default function JARVIS() {
     ]);
   };
 
-  const speak = (text) => {
-    if (!("speechSynthesis" in window)) return;
-    window.speechSynthesis.cancel();
+  const getAvailableVoices = () => new Promise((resolve) => {
+    const synth = window.speechSynthesis;
+    const current = synth.getVoices();
+    if (current.length) {
+      resolve(current);
+      return;
+    }
 
-    const voices = window.speechSynthesis.getVoices();
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      synth.removeEventListener?.("voiceschanged", onVoicesChanged);
+      resolve(synth.getVoices());
+    };
+    const onVoicesChanged = () => finish();
+    synth.addEventListener?.("voiceschanged", onVoicesChanged);
+    window.setTimeout(finish, 1800);
+  });
+
+  const speak = async (text) => {
+    if (!("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) {
+      addToHistory("Bu brauzer ovoz chiqarib o'qishni qo'llab-quvvatlamaydi.", "error");
+      return;
+    }
+
+    const synth = window.speechSynthesis;
+    synth.cancel();
+
+    const voices = await getAvailableVoices();
     const selectedLanguage = lang.split("-")[0].toLowerCase();
-
     const voice = voices.find(
       (v) => v.lang.toLowerCase() === lang.toLowerCase()
     ) || voices.find(
       (v) => v.lang.toLowerCase().startsWith(selectedLanguage + "-")
     );
 
-    if (!voice) {
-      addToHistory(
-        `${lang} uchun mos ovoz qurilmada topilmadi. Ovoz paketini o'rnatish kerak.`,
-        "error"
-      );
-      return;
-    }
-
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.voice = voice;
-    utterance.lang = voice.lang;
+    utterance.lang = lang;
     utterance.rate = 0.9;
     utterance.pitch = 1;
+    if (voice) utterance.voice = voice;
 
-    window.speechSynthesis.speak(utterance);
+    utterance.onerror = (event) => {
+      addToHistory(`Ovoz chiqarishda xatolik: ${event.error || "noma'lum xato"}`, "error");
+    };
+
+    if (!voice) {
+      addToHistory(`${lang} ovozi topilmadi. Brauzerning standart ovozi bilan urinib ko'raman.`, "system");
+    }
+    synth.speak(utterance);
   };
 
   const processCommand = (command) => {
@@ -187,7 +206,6 @@ export default function JARVIS() {
       return;
     }
 
-    // Calculator (safe arithmetic parser: only digits and arithmetic operators)
     if (/(hisobla|hisob|calculate|вычисл|посчитай)/i.test(cmd)) {
       let expr = cmd
         .replace(/hisobla|hisob|calculate|вычисл\w*|посчитай|qil/gi, "")
